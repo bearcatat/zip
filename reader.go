@@ -13,6 +13,8 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 var (
@@ -65,16 +67,16 @@ func OpenReader(name string) (*ReadCloser, error) {
 
 // NewReader returns a new Reader reading from r, which is assumed to
 // have the given size in bytes.
-func NewReader(r io.ReaderAt, size int64) (*Reader, error) {
+func NewReader(r io.ReaderAt, size int64, volumeSizes ...int64) (*Reader, error) {
 	zr := new(Reader)
-	if err := zr.init(r, size); err != nil {
+	if err := zr.init(r, size, volumeSizes...); err != nil {
 		return nil, err
 	}
 	return zr, nil
 }
 
-func (z *Reader) init(r io.ReaderAt, size int64) error {
-	end, err := readDirectoryEnd(r, size)
+func (z *Reader) init(r io.ReaderAt, size int64, volumeSizes ...int64) error {
+	end, err := readDirectoryEnd(r, size, volumeSizes...)
 	if err != nil {
 		return err
 	}
@@ -96,7 +98,7 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 	// the file count modulo 65536 is incorrect.
 	for {
 		f := &File{zipr: r, zipsize: size}
-		err = readDirectoryHeader(f, buf)
+		err = readDirectoryHeader(f, buf, volumeSizes...)
 		if err == ErrFormat || err == io.ErrUnexpectedEOF {
 			break
 		}
@@ -247,7 +249,7 @@ func (f *File) findBodyOffset() (int64, error) {
 // readDirectoryHeader attempts to read a directory header from r.
 // It returns io.ErrUnexpectedEOF if it cannot read a complete header,
 // and ErrFormat if it doesn't find a valid header signature.
-func readDirectoryHeader(f *File, r io.Reader) error {
+func readDirectoryHeader(f *File, r io.Reader, volumeSizes ...int64) error {
 	var buf [directoryHeaderLen]byte
 	if _, err := io.ReadFull(r, buf[:]); err != nil {
 		return err
@@ -270,7 +272,8 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 	filenameLen := int(b.uint16())
 	extraLen := int(b.uint16())
 	commentLen := int(b.uint16())
-	b = b[4:] // skipped start disk number and internal attributes (2x uint16)
+	distNum := int(b.uint16())
+	b = b[2:] // skipped internal attributes (2x uint16)
 	f.ExternalAttrs = b.uint32()
 	f.headerOffset = int64(b.uint32())
 	d := make([]byte, filenameLen+extraLen+commentLen)
@@ -292,15 +295,19 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 			eb := readBuf(b[:size])
 			switch tag {
 			case zip64ExtraId:
-				// update directory values from the zip64 extra block
-				if len(eb) >= 8 {
-					f.UncompressedSize64 = eb.uint64()
-				}
-				if len(eb) >= 8 {
-					f.CompressedSize64 = eb.uint64()
-				}
-				if len(eb) >= 8 {
+				if len(eb) == 8 {
 					f.headerOffset = int64(eb.uint64())
+				} else {
+					// update directory values from the zip64 extra block
+					if len(eb) >= 8 {
+						f.UncompressedSize64 = eb.uint64()
+					}
+					if len(eb) >= 8 {
+						f.CompressedSize64 = eb.uint64()
+					}
+					if len(eb) >= 8 {
+						f.headerOffset = int64(eb.uint64())
+					}
 				}
 			case winzipAesExtraId:
 				// grab the AE version
@@ -322,6 +329,13 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 			if v != 0 {
 				return ErrFormat
 			}
+		}
+	}
+	f.headerOffset = int64(CalculateOffset(distNum, uint64(f.headerOffset), volumeSizes))
+	if Isgbk(f.Name) {
+		utfName, err := simplifiedchinese.GBK.NewDecoder().String(f.Name)
+		if err == nil {
+			f.Name = utfName
 		}
 	}
 	return nil
@@ -367,7 +381,7 @@ func readDataDescriptor(r io.Reader, f *File) error {
 	return nil
 }
 
-func readDirectoryEnd(r io.ReaderAt, size int64) (dir *directoryEnd, err error) {
+func readDirectoryEnd(r io.ReaderAt, size int64, volumeSizes ...int64) (dir *directoryEnd, err error) {
 	// look for directoryEndSignature in the last 1k, then in the last 65k
 	var buf []byte
 	var directoryEndOffset int64
@@ -418,6 +432,8 @@ func readDirectoryEnd(r io.ReaderAt, size int64) (dir *directoryEnd, err error) 
 	if o := int64(d.directoryOffset); o < 0 || o >= size {
 		return nil, ErrFormat
 	}
+
+	d.directoryOffset = CalculateOffset(int(d.dirDiskNbr), d.directoryOffset, volumeSizes)
 	return d, nil
 }
 
@@ -504,4 +520,11 @@ func (b *readBuf) uint64() uint64 {
 	v := binary.LittleEndian.Uint64(*b)
 	*b = (*b)[8:]
 	return v
+}
+
+func CalculateOffset(volumn int, offset uint64, volumnSizes []int64) uint64 {
+	for i := 0; i < volumn; i++ {
+		offset += uint64(volumnSizes[i])
+	}
+	return offset
 }
