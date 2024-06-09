@@ -152,9 +152,10 @@ func xorBytes(dst, a, b []byte) int {
 // recommended if: 1. you buffer the data yourself and wait for authentication
 // before streaming to another source such as the network, or 2. you just don't
 // care about authenticating unknown ciphertext before use :).
-func newAuthReader(akey []byte, data, adata io.Reader, streaming bool) io.Reader {
+func newAuthReader(akey []byte, data, rdata, adata io.Reader, streaming bool) io.Reader {
 	ar := authReader{
 		data:  data,
+		rdata: rdata,
 		adata: adata,
 		mac:   hmac.New(sha1.New, akey),
 		err:   nil,
@@ -172,6 +173,7 @@ func newAuthReader(akey []byte, data, adata io.Reader, streaming bool) io.Reader
 // Streaming authentication
 type authReader struct {
 	data  io.Reader // data to be authenticated
+	rdata io.Reader // data to be read
 	adata io.Reader // the authentication code to read
 	mac   hash.Hash // hmac hash
 	err   error
@@ -227,11 +229,11 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 	}
 	// make sure we have auth'ed before we send any data
 	if !a.auth {
-		_, err := io.Copy(a.buf, a.data)
-		if err != nil {
-			a.err = err
-			return 0, a.err
-		}
+		// _, err := io.Copy(a.buf, a.data)
+		// if err != nil {
+		// 	a.err = err
+		// 	return 0, a.err
+		// }
 		ab := new(bytes.Buffer)
 		nn, err := io.Copy(ab, a.adata)
 		if err != nil {
@@ -241,18 +243,37 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 			a.err = ErrDecryption
 			return 0, a.err
 		}
-		_, err = a.mac.Write(a.buf.Bytes())
-		if err != nil {
-			a.err = err
-			return 0, a.err
+
+		for {
+			nr, err := a.data.Read(b)
+			if nr > 0 {
+				_, err = a.mac.Write(b[0:nr])
+				if err != nil {
+					a.err = err
+					return 0, a.err
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					a.err = err
+					return 0, a.err
+				}
+				break
+			}
 		}
+
+		// _, err = a.mac.Write(a.buf.Bytes())
+		// if err != nil {
+		// 	a.err = err
+		// 	return 0, a.err
+		// }
 		if !a.checkAuthentication(ab.Bytes()) {
 			a.err = ErrAuthentication
 			return 0, a.err
 		}
 	}
 	// so we've authenticated the data, now just pass it on.
-	n, err := a.buf.Read(b)
+	n, err := a.rdata.Read(b)
 	if err != nil {
 		a.err = err
 	}
@@ -310,9 +331,10 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	// f.CompressedSize64 = uint64(dataLen)
 	// f.CompressedSize = uint32(dataLen)
 	data := io.NewSectionReader(r, dataOff, dataLen)
+	rdata := io.NewSectionReader(r, dataOff, dataLen)
 	authOff := dataOff + dataLen
 	authcode := io.NewSectionReader(r, authOff, 10)
-	ar := newAuthReader(authKey, data, authcode, f.DeferAuth)
+	ar := newAuthReader(authKey, data, rdata, authcode, f.DeferAuth)
 	dr := decryptStream(decKey, ar)
 	if dr == nil {
 		return nil, ErrDecryption

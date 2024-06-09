@@ -384,7 +384,7 @@ func readDataDescriptor(r io.Reader, f *File) error {
 func readDirectoryEnd(r io.ReaderAt, size int64, volumeSizes ...int64) (dir *directoryEnd, err error) {
 	// look for directoryEndSignature in the last 1k, then in the last 65k
 	var buf []byte
-	var directoryEndOffset int64
+	// var directoryEndOffset int64
 	for i, bLen := range []int64{1024, 65 * 1024} {
 		if bLen > size {
 			bLen = size
@@ -395,7 +395,7 @@ func readDirectoryEnd(r io.ReaderAt, size int64, volumeSizes ...int64) (dir *dir
 		}
 		if p := findSignatureInBlock(buf); p >= 0 {
 			buf = buf[p:]
-			directoryEndOffset = size - bLen + int64(p)
+			// directoryEndOffset = size - bLen + int64(p)
 			break
 		}
 		if i == 1 || bLen == size {
@@ -420,13 +420,13 @@ func readDirectoryEnd(r io.ReaderAt, size int64, volumeSizes ...int64) (dir *dir
 	}
 	d.comment = string(b[:l])
 
-	p, err := findDirectory64End(r, directoryEndOffset)
-	if err == nil && p >= 0 {
-		err = readDirectory64End(r, p, d)
-	}
-	if err != nil {
-		return nil, err
-	}
+	// p, err := findDirectory64End(r, directoryEndOffset)
+	// if err == nil && p >= 0 {
+	// 	err = readDirectory64End(r, p, d)
+	// }
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// Make sure directoryOffset points to somewhere in our file.
 	if o := int64(d.directoryOffset); o < 0 || o >= size {
