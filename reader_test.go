@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go4.org/readerutil"
 )
 
 type ZipTest struct {
@@ -604,4 +606,63 @@ func TestIssue11146(t *testing.T) {
 		t.Errorf("File[0] error = %v; want io.ErrUnexpectedEOF", err)
 	}
 	r.Close()
+}
+
+func TestMultiVolumn(t *testing.T) {
+	filePathes := []string{
+		"/root/code/zip/testdata/.z01",
+		"/root/code/zip/testdata/.z02",
+		"/root/code/zip/testdata/.zip",
+	}
+	volumnSizes := make([]int64, 0, len(filePathes))
+	sectionReaders := make([]readerutil.SizeReaderAt, 0, len(filePathes))
+	for _, filePath := range filePathes {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		// get volumn size
+		info, err := file.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		volumnSizes = append(volumnSizes, info.Size())
+		sectionReaders = append(sectionReaders, io.NewSectionReader(file, 0, info.Size()))
+	}
+	mr := readerutil.NewMultiReaderAt(sectionReaders...)
+	zipr, err := NewReader(mr, mr.Size(), volumnSizes...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirPath := "./res"
+	for _, f := range zipr.File {
+		if strings.Contains(f.Name, "mp4") && !f.FileInfo().IsDir() {
+			continue
+		}
+		f.SetPassword("")
+		t.Log(f.Name)
+		filePath := filepath.Join(dirPath, f.Name)
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(filePath, 0755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		file, err := os.Create(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zipr, err := f.Open()
+		if err != nil {
+			t.Log(err)
+		}
+		var buf = make([]byte, 32*1024)
+		if _, err := io.CopyBuffer(file, zipr, buf); err != nil {
+			t.Fatal(err)
+		}
+		file.Close()
+		break
+	}
+
 }

@@ -359,9 +359,13 @@ func readDataDescriptor(r io.Reader, f *File) error {
 	}
 	off := 0
 	maybeSig := readBuf(buf[:4])
-	if maybeSig.uint32() != dataDescriptorSignature {
+	maybeSigUint32 := maybeSig.uint32()
+	if maybeSigUint32 != dataDescriptorSignature {
 		// No data descriptor signature. Keep these four
 		// bytes.
+		if maybeSigUint32 == fileHeaderSignature {
+			return nil
+		}
 		off += 4
 	}
 	if _, err := io.ReadFull(r, buf[off:12]); err != nil {
