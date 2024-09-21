@@ -1,6 +1,7 @@
 package zip
 
 import (
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -14,12 +15,12 @@ type RewindReader struct {
 	rewound    bool
 	buffering  bool
 	bufferSize int
-	readIdx    int
+	readIdx    int64
 }
 
 func (r *RewindReader) Read(p []byte) (int, error) {
 	n, err := r.read(p)
-	r.readIdx += n
+	r.readIdx += int64(n)
 	return n, err
 }
 
@@ -59,7 +60,7 @@ func (r *RewindReader) readByte() (byte, error) {
 
 func (r *RewindReader) Discard(n int) (int, error) {
 	n, err := r.discard(n)
-	r.readIdx += n
+	r.readIdx += int64(n)
 	return n, err
 }
 
@@ -80,6 +81,23 @@ func (r *RewindReader) discard(n int) (int, error) {
 	return n, nil
 }
 
+func (r *RewindReader) Seek(offset int64, whence int) (int64, error) {
+	if whence != 0 {
+		return 0, errors.New("unsupported whence")
+	}
+	if offset < int64(r.readIdx) {
+		return 0, errors.New("offset is less than readIdx")
+	}
+	discard := offset - r.readIdx
+	if discard > 0 {
+		_, err := r.Discard(int(discard))
+		if err != nil {
+			return 0, err
+		}
+	}
+	return offset, nil
+}
+
 func (r *RewindReader) Rewind() {
 	r.mu.Lock()
 	if r.bufferSize == 0 {
@@ -87,7 +105,7 @@ func (r *RewindReader) Rewind() {
 	}
 	r.rewound = true
 	r.bufReadIdx = 0
-	r.readIdx -= len(r.buf)
+	r.readIdx -= int64(len(r.buf))
 	r.mu.Unlock()
 }
 

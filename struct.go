@@ -156,7 +156,8 @@ type directoryEnd struct {
 	dirRecordsThisDisk uint64 // unused
 	directoryRecords   uint64
 	directorySize      uint64
-	directoryOffset    uint64 // relative to file
+	inDirectoryOffset  uint64
+	directoryOffset    uint64 // relative to all file
 	commentLen         uint16
 	comment            string
 }
