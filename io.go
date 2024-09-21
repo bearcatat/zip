@@ -28,22 +28,25 @@ func (r *RewindReader) read(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	var bufN int
 	if r.rewound {
 		if len(r.buf) > r.bufReadIdx {
-			n := copy(p, r.buf[r.bufReadIdx:])
-			r.bufReadIdx += n
-			return n, nil
+			bufN = copy(p, r.buf[r.bufReadIdx:])
+			r.bufReadIdx += bufN
+			if bufN >= len(p) {
+				return bufN, nil
+			}
 		}
 		r.rewound = false // all buffering content has been read
 	}
-	n, err := r.rawReader.Read(p)
+	n, err := r.rawReader.Read(p[bufN:])
 	if r.buffering {
-		r.buf = append(r.buf, p[:n]...)
+		r.buf = append(r.buf, p[bufN:n]...)
 		if len(r.buf) > r.bufferSize*2 {
 			log.Println("read too many bytes!")
 		}
 	}
-	return n, err
+	return n + bufN, err
 }
 
 func (r *RewindReader) ReadByte() (byte, error) {

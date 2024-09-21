@@ -133,7 +133,7 @@ func (f *FastFile) Open() (rc io.ReadCloser, err error) {
 	}
 	var descOff int64
 	if f.hasDataDescriptor() {
-		descOff = f.headerOffset + discardSize + size
+		descOff = f.headerOffset + fileHeaderLen + discardSize + size
 	}
 
 	rc = &fastFileReader{
@@ -236,7 +236,7 @@ func (r *fastFileReader) readDataDescriptor() error {
 	if maybeSigUint32 != dataDescriptorSignature {
 		// No data descriptor signature. Keep these four
 		// bytes.
-		if maybeSigUint32 == fileHeaderSignature {
+		if maybeSigUint32 == fileHeaderSignature || maybeSigUint32 == directoryHeaderSignature {
 			r.raw.Rewind()
 			r.raw.StopBuffering()
 			return nil

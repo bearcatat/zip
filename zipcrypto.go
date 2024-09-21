@@ -2,7 +2,6 @@ package zip
 
 import (
 	"bytes"
-	"errors"
 	"hash/crc32"
 	"io"
 )
@@ -79,7 +78,10 @@ func ZipCryptoDecryptor(r *io.SectionReader, password []byte) (*io.SectionReader
 
 func NewZipCryptoReader(r io.Reader, password []byte) (io.Reader, error) {
 	z := NewZipCrypto(password)
-	return &ZipCryptoReader{r, z}, nil
+	reader := &ZipCryptoReader{r, z}
+	var b [12]byte
+	_, err := reader.Read(b[:])
+	return reader, err
 }
 
 type ZipCryptoReader struct {
@@ -95,11 +97,7 @@ func (z *ZipCryptoReader) Read(p []byte) (n int, err error) {
 	}
 	plain := z.z.Decrypt(chiper)
 	copy(p, plain)
-	if nRead != len(plain) {
-		return 0, errors.New("ZipCryptoReader: nRead != len(plain)")
-	}
 	return nRead, nil
-
 }
 
 type zipCryptoWriter struct {
