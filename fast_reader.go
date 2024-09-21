@@ -99,11 +99,11 @@ type FastFile struct {
 }
 
 func (f *FastFile) Open() (rc io.ReadCloser, err error) {
-	headerSize, err := f.findBodyOffset()
+	discardSize, err := f.findBodyOffset()
 	if err != nil {
 		return
 	}
-	_, err = f.zipR.r.Discard(int(headerSize))
+	_, err = f.zipR.r.Discard(int(discardSize))
 	if err != nil {
 		return
 	}
@@ -133,7 +133,7 @@ func (f *FastFile) Open() (rc io.ReadCloser, err error) {
 	}
 	var descOff int64
 	if f.hasDataDescriptor() {
-		descOff = f.headerOffset + headerSize + size
+		descOff = f.headerOffset + discardSize + size
 	}
 
 	rc = &fastFileReader{
@@ -163,7 +163,7 @@ func (f *FastFile) findBodyOffset() (int64, error) {
 	filenameLen := int(b.uint16())
 	extraLen := int(b.uint16())
 
-	return int64(fileHeaderLen + filenameLen + extraLen), nil
+	return int64(filenameLen + extraLen), nil
 }
 
 func (f *FastFile) hasDataDescriptor() bool {

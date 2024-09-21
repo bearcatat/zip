@@ -59,12 +59,6 @@ func (r *RewindReader) readByte() (byte, error) {
 }
 
 func (r *RewindReader) Discard(n int) (int, error) {
-	n, err := r.discard(n)
-	r.readIdx += int64(n)
-	return n, err
-}
-
-func (r *RewindReader) discard(n int) (int, error) {
 	buf := [128]byte{}
 	if n < 128 {
 		return r.Read(buf[:n])
