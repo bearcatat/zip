@@ -11,7 +11,7 @@ import (
 	"go4.org/readerutil"
 )
 
-type ZipReader interface {
+type ZipFileReader interface {
 	io.Seeker
 	io.Reader
 	readerutil.SizeReaderAt
@@ -22,7 +22,7 @@ type FastReader struct {
 	files []*FastFile
 }
 
-func NewFastReader(zipReaders []ZipReader) (*FastReader, error) {
+func NewFastReader(zipReaders []ZipFileReader) (*FastReader, error) {
 	z := &FastReader{}
 	if err := z.init(zipReaders); err != nil {
 		return nil, err
@@ -30,7 +30,13 @@ func NewFastReader(zipReaders []ZipReader) (*FastReader, error) {
 	return z, nil
 }
 
-func (z *FastReader) init(zipReaders []ZipReader) error {
+func (z *FastReader) WalkDir(fn func(f *FastFile)) {
+	for _, file := range z.files {
+		fn(file)
+	}
+}
+
+func (z *FastReader) init(zipReaders []ZipFileReader) error {
 	sizedReaderAt := make([]readerutil.SizeReaderAt, 0, len(zipReaders))
 	volumeSizes := make([]int64, 0, len(zipReaders))
 	for _, r := range zipReaders {
@@ -121,7 +127,7 @@ func (f *FastFile) Open() (rc io.ReadCloser, err error) {
 		err = ErrAlgorithm
 		return
 	}
-	rc = dcomp(rr)
+	rc = dcomp(r)
 	if f.isAE2() {
 		return
 	}

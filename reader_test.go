@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -664,5 +665,63 @@ func TestMultiVolumn(t *testing.T) {
 		file.Close()
 		break
 	}
+}
 
+type FakeFile struct {
+	*os.File
+	fs.FileInfo
+}
+
+func TestFastReader_WalkDir(t *testing.T) {
+	filePathes := []string{
+		"/root/code/zip/testdata/.z01",
+		"/root/code/zip/testdata/.z02",
+		"/root/code/zip/testdata/.zip",
+	}
+	zipFiles := make([]ZipFileReader, 0, len(filePathes))
+	for _, filePath := range filePathes {
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		// get volumn size
+		info, err := file.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		zipFiles = append(zipFiles, FakeFile{file, info})
+	}
+	zipr, err := NewFastReader(zipFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirPath := "./res"
+	zipr.WalkDir(func(f *FastFile) {
+		// if strings.Contains(f.Name, "mp4") && !f.FileInfo().IsDir() {
+		// 	return
+		// }
+		f.SetPassword("")
+		t.Log(f.Name)
+		filePath := filepath.Join(dirPath, f.Name)
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(filePath, 0755); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		file, err := os.Create(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zipr, err := f.Open()
+		if err != nil {
+			t.Log(err)
+		}
+		var buf = make([]byte, 32*1024)
+		if _, err := io.CopyBuffer(file, zipr, buf); err != nil {
+			t.Fatal(err)
+		}
+		file.Close()
+	})
 }
